@@ -1,0 +1,42 @@
+import numpy as np
+
+n = 200
+vaccine_types = 3
+np.random.seed(42)
+
+coords = np.random.rand(n, 2) * 100
+dist = np.sqrt(((coords[:, np.newaxis] - coords) ** 2).sum(axis=2))
+demand = np.random.randint(5, 15, size=(n, vaccine_types))
+demand[0, :] = 0
+
+capacity = [150, 100, 200]
+cooling_time = [12, 8, 24]
+time_windows = np.random.randint(8, 17, size=(n, vaccine_types, 2))
+time_windows[:, :, 1] = np.maximum(time_windows[:, :, 0] + 1, time_windows[:, :, 1])
+time_windows[0, :, :] = [0, 24]
+
+max_fuel = 600
+
+remaining_capacity = np.array(capacity)
+current_node = 0
+visited = {0}
+route = [0]
+total_distance = 0
+
+while len(visited) < n:
+    next_node = np.argmin([dist[current_node, j] if j not in visited else np.inf for j in range(n)])
+    if total_distance + dist[current_node, next_node] > max_fuel:
+        break
+    route.append(next_node)
+    visited.add(next_node)
+    total_distance += dist[current_node, next_node]
+    for k in range(vaccine_types):
+        delivered = min(demand[next_node, k], remaining_capacity[k])
+        remaining_capacity[k] -= delivered
+    current_node = next_node
+
+if len(visited) == n:
+    print("Greedy Route Found:", route)
+    print(f"Total Distance: {total_distance}")
+else:
+    print("Route Incomplete. Reached Fuel Limit.")
