@@ -1,0 +1,79 @@
+import gurobipy as gp
+from gurobipy import GRB
+import numpy as np
+
+n = 200
+vaccine_types = 3
+np.random.seed(42)
+
+coords = np.random.rand(n, 2) * 100
+dist = np.sqrt(((coords[:, np.newaxis] - coords) ** 2).sum(axis=2))
+
+demand = np.random.randint(5, 15, size=(n, vaccine_types))
+demand[0, :] = 0
+
+capacity = [150, 100, 200]
+cooling_time = [12, 8, 24]
+time_windows = np.random.randint(8, 17, size=(n, vaccine_types, 2))
+time_windows[:, :, 1] = np.maximum(time_windows[:, :, 0] + 1, time_windows[:, :, 1])
+time_windows[0, :, :] = [0, 24]
+
+max_fuel = 600
+
+m = gp.Model("Vaccine_Distribution_Multi_Type")
+x = m.addVars(n, n, vtype=GRB.BINARY, name="x")
+u = m.addVars(n, vtype=GRB.CONTINUOUS, lb=0, ub=sum(capacity), name="u")
+arrival_time = m.addVars(n, vtype=GRB.CONTINUOUS, name="arrival_time")
+delivered = m.addVars(n, vaccine_types, vtype=GRB.INTEGER, name="delivered")
+
+m.setObjective(gp.quicksum(dist[i, j] * x[i, j] for i in range(n) for j in range(n)), GRB.MINIMIZE)
+
+for i in range(n):
+    m.addConstr(gp.quicksum(x[i, j] for j in range(n) if j != i) == 1)
+    m.addConstr(gp.quicksum(x[j, i] for j in range(n) if j != i) == 1)
+
+for i in range(1, n):
+    for j in range(1, n):
+        if i != j:
+            m.addConstr(u[i] - u[j] + sum(capacity) * x[i, j] <= sum(capacity) - 1)
+
+m.addConstr(gp.quicksum(dist[i, j] * x[i, j] for i in range(n) for j in range(n)) <= max_fuel)
+
+for i in range(n):
+    for k in range(vaccine_types):
+        m.addConstr(arrival_time[i] >= time_windows[i, k, 0])
+        m.addConstr(arrival_time[i] <= time_windows[i, k, 1])
+
+for i in range(1, n):
+    for k in range(vaccine_types):
+        m.addConstr(arrival_time[i] - arrival_time[0] <= cooling_time[k])
+
+for i in range(n):
+    for k in range(vaccine_types):
+        m.addConstr(delivered[i, k] <= demand[i, k])
+        m.addConstr(gp.quicksum(delivered[j, k] for j in range(n)) <= capacity[k])
+
+m.addConstr(gp.quicksum(x[0, j] for j in range(1, n)) == 1)
+m.addConstr(gp.quicksum(x[i, 0] for i in range(1, n)) == 1)
+
+for i in range(n):
+    m.addConstr(gp.quicksum(x[i, j] for j in range(n) if j != i) == gp.quicksum(x[j, i] for j in range(n) if j != i))
+
+m.optimize()
+
+if m.status == GRB.OPTIMAL:
+    print(f"Optimal objective (total distance): {m.objVal}")
+    route = []
+    next_node = 0
+    visited = set()
+    while len(visited) < n:
+        route.append(next_node)
+        visited.add(next_node)
+        next_node = [j for j in range(n) if x[next_node, j].x > 0.5][0]
+    print("Optimal Route:", route)
+    for i in range(n):
+        print(f"Node {i} visited at time {arrival_time[i].x:.2f}")
+        for k in range(vaccine_types):
+            print(f"  Vaccine {k + 1} delivered: {delivered[i, k].x} units")
+else:
+    print("No optimal solution found.")
